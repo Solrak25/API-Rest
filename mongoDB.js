@@ -1,10 +1,10 @@
-import { MongoClient, ObjectId } from "mongodb"; 
+import { MongoClient, ObjectId } from "mongodb";
 import express from "express";
 import cors from "cors";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
-const SECRET_KEY = "secreto";
+const SECRET_KEY = process.env.JWT_SECRET ?? "secreto";
 
 const app = express();
 app.use(express.json());
@@ -19,7 +19,7 @@ const PRODUCTS = "products";
 const client = new MongoClient(DB_URL);
 
 function verifyToken(request, response, next) {
-    const token = request.headers.authorization?.split(" ")[1]; 
+    const token = request.headers.authorization?.split(" ")[1];
 
     if (!token)
         return response.status(403).json({ message: "Token requerido" });
@@ -41,11 +41,10 @@ app.post("/api/login", async (request, response) => {
     const database = client.db(DB_NAME);
     const collection = database.collection(USERS);
 
-    const Users = await collection.find({}).toArray();
+    // Pedimos solo el usuario que coincide, en vez de cargar todos
+    const user = await collection.findOne({ nombre });
 
-    const user = Users.find((u) => u.nombre == nombre);
-
-    if (user == undefined) {
+    if (!user) {
         return response.json({ message: "Usuario no encontrado" });
     }
 
@@ -55,79 +54,13 @@ app.post("/api/login", async (request, response) => {
         return response.json({ message: "Contraseña incorrecta" });
     }
 
-    const token = jwt.sign({ id: user.id, nombre: user.nombre }, SECRET_KEY, {
+    // MongoDB guarda el identificador como _id, no como id
+    const token = jwt.sign({ id: user._id, nombre: user.nombre }, SECRET_KEY, {
         expiresIn: "5m",
     });
 
     response.json({ token });
 });
-
-// app.get("/", (request, response) => {
-//     response.redirect("/api/users");
-// });
-
-// // GET
-// app.get("/api/users", async (request, response) => {
-//     const database = client.db(DB_NAME);
-//     const collection = database.collection(USERS);
-
-//     const results = await collection.find({}).toArray();
-
-//     response.status(200).json(results);
-// });
-
-// // POST
-// app.post("/api/users", async (request, response) => {
-//     if (!request.is("json"))
-//         return response.json({ message: "Debes proporcionar datos JSON" });
-
-//     const database = client.db(DB_NAME);
-//     const collection = database.collection(USERS);
-
-//     const { nombre, edad } = request.body;
-//     const results = await collection.insertOne({ nombre, edad, bcrypt.hash(contraseña, 10) });
-
-//     return response.status(200).json(results);
-// });
-
-// // GET
-// app.get("/api/users/:id", async (request, response) => {
-//     const database = client.db(DB_NAME);
-//     const collection = database.collection(USERS);
-
-//     const { id } = request.params;
-//     const results = await collection.find({ _id: new ObjectId(id) }).toArray();
-
-//     response.status(200).json(results);
-// });
-
-// // PUT
-// app.put("/api/users/:id", async (request, response) => {
-//     if (!request.is("json"))
-//         return response.json({ message: "Debes proporcionar datos JSON" });
-
-//     const database = client.db(DB_NAME);
-//     const collection = database.collection(USERS);
-
-//     const { id } = request.params;
-//     const { nombre, edad, contraseña } = request.body;
-//     const results = await collection.updateOne(
-//         { _id: new ObjectId(id) },
-//         { $set: { nombre, edad, contraseña } },
-//     );
-
-//     response.status(200).json(results);
-// });
-
-// // DELETE
-// app.delete("/api/users/:id", async (request, response) => {
-//     const database = client.db(DB_NAME);
-//     const collection = database.collection(USERS);
-
-//     const { id } = request.params;
-//     const results = await collection.deleteOne({ _id: new ObjectId(id) });
-//     response.status(200).json(results);
-// });
 
 // -------------- PRODUCTS ------------------
 
@@ -189,4 +122,12 @@ app.delete("/api/products/:id", verifyToken, async (request, response) => {
     response.status(200).json(results);
 });
 
-app.listen(PORT, () => console.log(`Servidor web iniciado en puerto: ${PORT}`));
+// Solo escucha en local; en Vercel la plataforma gestiona el servidor
+if (!process.env.VERCEL) {
+    app.listen(PORT, () =>
+        console.log(`Servidor web iniciado en puerto: ${PORT}`),
+    );
+}
+
+// Imprescindible para que Vercel pueda ejecutar la app
+export default app;
